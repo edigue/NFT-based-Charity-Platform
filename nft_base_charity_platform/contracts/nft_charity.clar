@@ -20,35 +20,53 @@
 (define-data-var paused bool false)
 
 ;; NFT data maps
-(define-map nft-owners uint principal)
-(define-map token-uri uint (string-utf8 256))
-(define-map nft-price uint uint)
-(define-map nft-metadata 
-    uint 
-    {creator: principal, 
-     timestamp: uint, 
-     category: (string-utf8 64)}
+(define-map nft-owners
+    uint
+    principal
+)
+(define-map token-uri
+    uint
+    (string-utf8 256)
+)
+(define-map nft-price
+    uint
+    uint
+)
+(define-map nft-metadata
+    uint
+    {
+        creator: principal,
+        timestamp: uint,
+        category: (string-utf8 64),
+    }
 )
 
 ;; Charity campaign data
-(define-map charity-campaigns 
-    uint 
-    {name: (string-utf8 64),
-     description: (string-utf8 256),
-     goal: uint,
-     raised: uint,
-     deadline: uint,
-     active: bool}
+(define-map charity-campaigns
+    uint
+    {
+        name: (string-utf8 64),
+        description: (string-utf8 256),
+        goal: uint,
+        raised: uint,
+        deadline: uint,
+        active: bool,
+    }
 )
 
 (define-data-var campaign-counter uint u0)
 
 ;; Donation history
-(define-map user-donations 
-    {user: principal, campaign-id: uint} 
-    {amount: uint, timestamp: uint}
+(define-map user-donations
+    {
+        user: principal,
+        campaign-id: uint,
+    }
+    {
+        amount: uint,
+        timestamp: uint,
+    }
 )
-
 
 ;; Read-only functions
 (define-read-only (get-token-uri (token-id uint))
@@ -71,38 +89,53 @@
     (map-get? charity-campaigns campaign-id)
 )
 
-(define-read-only (get-user-donation-history (user principal) (campaign-id uint))
-    (map-get? user-donations {user: user, campaign-id: campaign-id})
+(define-read-only (get-user-donation-history
+        (user principal)
+        (campaign-id uint)
+    )
+    (map-get? user-donations {
+        user: user,
+        campaign-id: campaign-id,
+    })
 )
 
-
 ;; Private functions
-(define-private (check-owner (token-id uint) (acc uint))
+(define-private (check-owner
+        (token-id uint)
+        (acc uint)
+    )
     (if (is-eq (some tx-sender) (map-get? nft-owners token-id))
         (+ acc u1)
         acc
     )
 )
 
-(define-private (transfer-token (token-id uint) (sender principal) (recipient principal))
+(define-private (transfer-token
+        (token-id uint)
+        (sender principal)
+        (recipient principal)
+    )
     (begin
         (map-set nft-owners token-id recipient)
         (ok true)
     )
 )
 
-
 ;; Public functions - NFT Core
-(define-public (mint (uri (string-utf8 256)) (category (string-utf8 64)))
+(define-public (mint
+        (uri (string-utf8 256))
+        (category (string-utf8 64))
+    )
     (let ((token-id (+ (var-get total-nfts) u1)))
         (begin
             (asserts! (not (var-get paused)) (err u108))
             (map-set nft-owners token-id tx-sender)
             (map-set token-uri token-id uri)
-            (map-set nft-metadata token-id 
-                {creator: tx-sender,
-                 timestamp: block-height,
-                 category: category})
+            (map-set nft-metadata token-id {
+                creator: tx-sender,
+                timestamp: block-height,
+                category: category,
+            })
             (var-set total-nfts token-id)
             (ok token-id)
         )
@@ -110,14 +143,20 @@
 )
 
 ;; Public functions - NFT Trading
-(define-public (transfer (token-id uint) (recipient principal))
+(define-public (transfer
+        (token-id uint)
+        (recipient principal)
+    )
     (let ((owner (unwrap! (map-get? nft-owners token-id) (err u1))))
         (asserts! (is-eq tx-sender owner) err-not-token-owner)
         (transfer-token token-id owner recipient)
     )
 )
 
-(define-public (list-for-sale (token-id uint) (price uint))
+(define-public (list-for-sale
+        (token-id uint)
+        (price uint)
+    )
     (let ((owner (unwrap! (map-get? nft-owners token-id) (err u1))))
         (begin
             (asserts! (not (var-get paused)) (err u108))
@@ -130,39 +169,51 @@
 )
 
 ;; Public functions - Charity Campaigns
-(define-public (create-charity-campaign 
-    (name (string-utf8 64))
-    (description (string-utf8 256))
-    (goal uint)
-    (duration uint))
+(define-public (create-charity-campaign
+        (name (string-utf8 64))
+        (description (string-utf8 256))
+        (goal uint)
+        (duration uint)
+    )
     (let ((campaign-id (+ (var-get campaign-counter) u1)))
         (begin
             (asserts! (is-eq tx-sender contract-owner) err-owner-only)
             (asserts! (> goal u0) err-invalid-parameter)
-            (map-set charity-campaigns campaign-id
-                {name: name,
-                 description: description,
-                 goal: goal,
-                 raised: u0,
-                 deadline: (+ block-height duration),
-                 active: true})
+            (map-set charity-campaigns campaign-id {
+                name: name,
+                description: description,
+                goal: goal,
+                raised: u0,
+                deadline: (+ block-height duration),
+                active: true,
+            })
             (var-set campaign-counter campaign-id)
             (ok campaign-id)
         )
     )
 )
 
-(define-public (donate-to-campaign (campaign-id uint) (amount uint))
+(define-public (donate-to-campaign
+        (campaign-id uint)
+        (amount uint)
+    )
     (let ((campaign (unwrap! (map-get? charity-campaigns campaign-id) err-campaign-not-found)))
         (begin
             (asserts! (get active campaign) err-campaign-not-found)
-            (asserts! (<= block-height (get deadline campaign)) err-campaign-expired)
+            (asserts! (<= block-height (get deadline campaign))
+                err-campaign-expired
+            )
             (try! (stx-transfer? amount tx-sender (var-get charity-address)))
             (map-set charity-campaigns campaign-id
-                (merge campaign {raised: (+ (get raised campaign) amount)}))
-            (map-set user-donations 
-                {user: tx-sender, campaign-id: campaign-id}
-                {amount: amount, timestamp: block-height})
+                (merge campaign { raised: (+ (get raised campaign) amount) })
+            )
+            (map-set user-donations {
+                user: tx-sender,
+                campaign-id: campaign-id,
+            } {
+                amount: amount,
+                timestamp: block-height,
+            })
             (var-set total-donations (+ (var-get total-donations) amount))
             (ok true)
         )
@@ -171,8 +222,7 @@
 
 ;; Public functions - Marketplace with Charity
 (define-public (buy-nft (token-id uint))
-    (let 
-        (
+    (let (
             (price (unwrap! (map-get? nft-price token-id) err-invalid-price))
             (owner (unwrap! (map-get? nft-owners token-id) err-not-token-owner))
             (donation-amount (/ (* price (var-get donation-percentage)) u100))
@@ -180,20 +230,29 @@
         )
         (begin
             (asserts! (not (var-get paused)) err-invalid-price)
-            (asserts! (>= (stx-get-balance tx-sender) price) err-insufficient-funds)
-            
+            (asserts! (>= (stx-get-balance tx-sender) price)
+                err-insufficient-funds
+            )
             ;; Transfer payment to seller
-            (unwrap! (stx-transfer? seller-amount tx-sender owner) err-insufficient-funds)
-            
+            (unwrap! (stx-transfer? seller-amount tx-sender owner)
+                err-insufficient-funds
+            )
             ;; Transfer donation to charity
-            (unwrap! (stx-transfer? donation-amount tx-sender (var-get charity-address)) err-insufficient-funds)
-            
+            (unwrap!
+                (stx-transfer? donation-amount tx-sender
+                    (var-get charity-address)
+                )
+                err-insufficient-funds
+            )
             ;; Transfer NFT ownership
-            (unwrap! (transfer-token token-id owner tx-sender) err-not-token-owner)
-            
+            (unwrap! (transfer-token token-id owner tx-sender)
+                err-not-token-owner
+            )
             ;; Cleanup and update state
             (map-delete nft-price token-id)
-            (var-set total-donations (+ (var-get total-donations) donation-amount))
+            (var-set total-donations
+                (+ (var-get total-donations) donation-amount)
+            )
             (ok true)
         )
     )
@@ -230,7 +289,8 @@
         (begin
             (asserts! (is-eq tx-sender contract-owner) err-owner-only)
             (map-set charity-campaigns campaign-id
-                (merge campaign {active: false}))
+                (merge campaign { active: false })
+            )
             (ok true)
         )
     )
